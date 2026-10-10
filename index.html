@@ -174,6 +174,13 @@ body.mouth-open .cin img.closed{display:none}
 #rot{position:fixed;inset:0;z-index:999;background:#bfe0fb;display:none;align-items:center;justify-content:center;flex-direction:column;gap:18px;font-size:22px;text-align:center;padding:20px;color:var(--ink)}
 #rot .btn{text-align:center}
 @media (orientation:portrait) and (max-width:700px){#rot.show{display:flex}}
+/* ---- menú ampliado ---- */
+.gcards{flex-wrap:wrap;gap:12px;align-content:center;padding:0 24px}
+.gcard{width:172px;height:130px;gap:2px;padding:4px 4px}
+.gcard .ic{height:46px}
+.gcard h4{font-size:18px;line-height:20px;padding:0 4px;min-height:40px;display:flex;align-items:center}
+.gcard .sub{font-size:15px;color:var(--pink-d)}
+
 </style>
 </head>
 <body>
@@ -505,7 +512,7 @@ function buildHud() {
   for (let i = 0; i < 5; i++) { const h = spimg('heart', 3); if (i >= full) h.className = 'off'; L.append(h); }
   const cnt = document.createElement('b'); cnt.textContent = '×' + state.aff; L.append(cnt);
   const R = div('hr');
-  if (['catch', 'memory', 'simon'].includes(sc)) R.append(btn('Juegos', miniMenu));
+  if (GAME_SCENES.includes(sc)) R.append(btn('Juegos', miniMenu));
   if (sc !== 'title') R.append(btn('Inicio', () => titleScene()));
   R.append(btn(state.snd ? '♪ Sí' : '♪ No', toggleSound));
   hud.append(L, R);
@@ -556,7 +563,7 @@ function titleScene(page = 'main') {
 function resetAll() {
   if (!confirm('¿Borrar corazones, nombre y récords? (Las imágenes se quedan.)')) return;
   ['aff', 'player', 'best', 'secret'].forEach(k => store.del(k));
-  state.aff = 0; state.player = ''; state.best = { catch: 0, memory: 0, simon: 0 }; titleScene();
+  state.aff = 0; state.player = ''; state.best = defBest(); titleScene();
 }
 async function askName(force) {
   await say(force ? '¿Cómo quieres que te llame?' : 'Antes de charlar… ¿cómo te llamas?', { wait: false });
@@ -670,28 +677,6 @@ async function tEspecial() {
     await say('Tengo algo para ti, {n}. Lo guardé desde hace mucho…');
     love(2); await say(DEDICATORIA, { wait: false });
   } else await say('Ya te conté mi secreto… ¡cuando juntemos más corazones tendré algo aún más especial!', { wait: false });
-}
-
-/* =====================================================
-   Menú de minijuegos
-   ===================================================== */
-function miniMenu() {
-  go('mini', () => {
-    const row = div('gcards');
-    const games = [
-      ['Atrapa los rollitos', 'pastry', 5, catchGame, 'Récord: ' + state.best.catch],
-      ['Memoria de dulces', 'heart', 5, memoryGame, state.best.memory ? 'Mejor: ' + state.best.memory + ' intentos' : 'Sin récord aún'],
-      ['Estrellas musicales', 'star_yellow', 7, simonGame, 'Récord: ' + state.best.simon]
-    ];
-    games.forEach(([t, ic, sc, f, sub]) => {
-      const b = document.createElement('button'); b.className = 'gcard';
-      const w = div('ic'); w.append(spimg(ic, sc)); b.append(w, div('', '<h4>' + t + '</h4>'), div('', '<small>' + sub + '</small>'));
-      b.lastChild.style.cssText = 'font-size:16px;color:#e0709f';
-      b.onclick = () => { sfx.pop(); f(); }; row.append(b);
-    });
-    play.append(row);
-    say('¿A cuál jugamos, {n}? ¡Yo te voy animando!', { wait: false });
-  });
 }
 
 /* =====================================================
@@ -853,6 +838,618 @@ function simonGame() {
       }, 700);
     }
     say('Mira cómo brillan las estrellas y repite el orden. ¡Escucha con atención!', { wait: false }).then(() => { if (alive) round(); });
+  });
+}
+
+/* =====================================================
+   Base para los juegos nuevos: sprites procedurales
+   ===================================================== */
+const GAME_SCENES = ['catch', 'memory', 'simon', 'volley', 'bakery', 'cups', 'rps'];
+const defBest = () => ({ catch: 0, memory: 0, simon: 0, volley: 0, bakery: 0, cups: 0, rps: 0 });
+state.best = Object.assign(defBest(), state.best);
+
+const pc = {};
+function pix(key, w, h, sc, fn) {
+  const k = key + '@' + sc;
+  if (!pc[k]) {
+    const c = document.createElement('canvas'); c.width = w * sc; c.height = h * sc;
+    const x = c.getContext('2d');
+    fn((a, b, cw, ch, col) => { x.fillStyle = col; x.fillRect(a * sc, b * sc, cw * sc, ch * sc); });
+    pc[k] = c;
+  }
+  return pc[k];
+}
+function pimg(key, w, h, sc, fn, cls) {
+  const i = document.createElement('img'); i.src = pix(key, w, h, sc, fn).toDataURL(); i.alt = ''; i.draggable = false;
+  if (cls) i.className = cls; return i;
+}
+const OUT = '#3f78c0';
+const SPD = {
+  ball: [12, 12, p => {
+    for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) {
+      const d = Math.hypot(x - 5.5, y - 5.5); if (d > 5.7) continue;
+      let c = '#ffffff'; if (Math.abs(x - y) <= 1) c = '#ffb3cf'; else if (Math.abs(x + y - 11) <= 1) c = '#9fd0ff';
+      if (d > 4.7) c = OUT; p(x, y, 1, 1, c);
+    }
+  }],
+  cup: [14, 16, p => {
+    for (let y = 0; y < 15; y++) {
+      const half = 3 + Math.floor(y * 3.6 / 14), x0 = 7 - half, w = half * 2;
+      p(x0, y, w, 1, y >= 5 && y <= 7 ? '#ffffff' : '#ff9fc2');
+      p(x0, y, 1, 1, OUT); p(x0 + w - 1, y, 1, 1, OUT);
+    }
+    p(4, 0, 6, 1, OUT); p(1, 14, 12, 1, OUT);
+  }],
+  rock: [12, 10, p => {
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 12; x++) {
+      const d = Math.hypot((x - 5.5) / 6, (y - 5) / 5); if (d > 1) continue;
+      p(x, y, 1, 1, d > .85 ? '#5d6d8c' : (x + y < 8 ? '#cdd6e6' : '#a3b0c8'));
+    }
+  }],
+  paper: [10, 12, p => {
+    p(0, 0, 10, 12, OUT); p(1, 1, 8, 10, '#ffffff');
+    [3, 5, 7, 9].forEach(y => p(2, y, 6, 1, '#ffb3cf'));
+  }],
+  scissors: [12, 12, p => {
+    for (let i = 0; i < 8; i++) { p(2 + i, i, 1, 1, '#8aa6cc'); p(3 + i, i, 1, 1, '#c9daf0'); p(9 - i, i, 1, 1, '#8aa6cc'); p(8 - i, i, 1, 1, '#c9daf0'); }
+    [[0, 8], [8, 8]].forEach(([x, y]) => { p(x, y, 4, 4, '#e0709f'); p(x + 1, y + 1, 2, 2, '#fff0f6'); });
+  }],
+  coin: [8, 8, p => {
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { const d = Math.hypot(x - 3.5, y - 3.5); if (d <= 3.9) p(x, y, 1, 1, d > 3 ? '#d99a1e' : '#ffd75e'); }
+    p(3, 2, 2, 4, '#d99a1e');
+  }]
+};
+const sprImg = (name, sc, cls) => { const [w, h, f] = SPD[name]; return pimg(name, w, h, sc, f, cls); };
+const sprCv = (name, sc) => { const [w, h, f] = SPD[name]; return pix(name, w, h, sc, f); };
+
+/* =====================================================
+   Menú de minijuegos (ampliado)
+   ===================================================== */
+function miniMenu() {
+  go('mini', () => {
+    const row = div('gcards'), B = state.best;
+    const games = [
+      ['Pastelería de canela', () => itemImg('cup', ['g', 'c'], 4), bakeryGame, B.bakery ? 'Mejor: ' + B.bakery + ' monedas' : 'Nuevo'],
+      ['Vóley en la playa', () => sprImg('ball', 4), volleyGame, 'Victorias: ' + B.volley],
+      ['Atrapa los rollitos', () => spimg('pastry', 4), catchGame, 'Récord: ' + B.catch],
+      ['Memoria de dulces', () => spimg('heart', 5), memoryGame, B.memory ? 'Mejor: ' + B.memory + ' intentos' : 'Sin récord'],
+      ['Estrellas musicales', () => spimg('star_yellow', 5), simonGame, 'Récord: ' + B.simon],
+      ['¿Dónde está el rollito?', () => sprImg('cup', 3), cupsGame, 'Racha: ' + B.cups],
+      ['Piedra, papel o tijera', () => sprImg('scissors', 4), rpsGame, 'Victorias: ' + B.rps]
+    ];
+    games.forEach(([t, ic, f, sub]) => {
+      const b = document.createElement('button'); b.className = 'gcard';
+      const w = div('ic'); w.append(ic());
+      b.append(w, div('', '<h4>' + t + '</h4>'), div('sub', sub));
+      b.onclick = () => { sfx.pop(); f(); }; row.append(b);
+    });
+    play.append(row);
+    say('¿A cuál jugamos, {n}? ¡Hay pastelería, vóley y más! Yo te voy animando.', { wait: false });
+  });
+}
+
+/* =====================================================
+   Animalitos pixel (oponente del vóley y clientes)
+   ===================================================== */
+const ANIMALS = {
+  bear: { m: '#b98558', d: '#8a5c3a', l: '#f0d2ae', e: '#8a5c3a', nose: '#4a3228' },
+  cat: { m: '#f4b266', d: '#cf8440', l: '#fff0d6', e: '#cf8440', nose: '#e0709f' },
+  bunny: { m: '#fdf3f7', d: '#d9b8c8', l: '#ffffff', e: '#ffc4d8', nose: '#e0709f' },
+  chick: { m: '#ffe27a', d: '#e0b83a', l: '#fff6c4', e: '#ffe27a', nose: '#ff9a4a' },
+  panda: { m: '#ffffff', d: '#aab4c8', l: '#ffffff', e: '#3a3a4a', nose: '#3a3a4a' }
+};
+function animalCv(kind, sc) {
+  const A = ANIMALS[kind];
+  return pix('animal_' + kind, 16, 20, sc, p => {
+    const ell = (cx, cy, rx, ry, col) => {
+      for (let y = 0; y < 20; y++) for (let x = 0; x < 16; x++) {
+        const d = Math.hypot((x + .5 - cx) / rx, (y + .5 - cy) / ry); if (d <= 1) p(x, y, 1, 1, col(d, x, y));
+      }
+    };
+    const body = (d, x, y) => d > .82 ? A.d : (Math.abs(x - 8) < 2.6 && y > 13 ? A.l : A.m);
+    // orejas
+    if (kind === 'bunny') { ell(5, 3, 1.8, 3.4, (d) => d > .75 ? A.d : A.m); ell(11, 3, 1.8, 3.4, (d) => d > .75 ? A.d : A.m); p(5, 2, 1, 3, A.e); p(10, 2, 1, 3, A.e); }
+    else if (kind === 'cat') { [[2, 2], [11, 2]].forEach(([x, y]) => { p(x, y + 2, 3, 2, A.m); p(x + (x < 8 ? 0 : 1), y + 1, 2, 1, A.m); p(x + (x < 8 ? 0 : 2), y, 1, 1, A.d); }); }
+    else if (kind === 'chick') { p(7, 2, 1, 2, A.d); p(9, 3, 1, 1, A.d); }
+    else { ell(3.4, 4.2, 2.2, 2.2, d => d > .7 ? A.d : A.e); ell(12.6, 4.2, 2.2, 2.2, d => d > .7 ? A.d : A.e); }
+    ell(8, 15.6, 4.6, 4.2, body);                         // cuerpo
+    ell(8, 8.6, 6.6, 5.6, body);                          // cabeza
+    p(5, 8, 1, 2, '#2d2a40'); p(10, 8, 1, 2, '#2d2a40'); // ojos
+    p(5, 8, 1, 1, '#ffffff'); p(10, 8, 1, 1, '#ffffff');
+    p(3, 10, 2, 1, '#ffb3cf'); p(11, 10, 2, 1, '#ffb3cf'); // mejillas
+    if (kind === 'chick') { p(7, 10, 2, 1, A.nose); p(7, 11, 2, 1, '#e07a2a'); } else p(7, 10, 2, 1, A.nose);
+    p(5, 18, 2, 2, A.d); p(9, 18, 2, 2, A.d);              // patitas
+  });
+}
+const animalImg = (kind, sc, cls) => { const i = document.createElement('img'); i.src = animalCv(kind, sc).toDataURL(); i.alt = ''; i.draggable = false; if (cls) i.className = cls; return i; };
+
+/* =====================================================
+   Vóley en la playa
+   ===================================================== */
+function volleyGame() {
+  go('volley', () => {
+    const W = 800, H = 292, GY = 274, NX = 400, NT = 176, R = 12, GRAV = 650, WIN = 5;
+    const c = document.createElement('canvas'); c.width = W; c.height = H; c.className = 'cv'; play.append(c);
+    const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+    const imC = new Image(), imO = new Image(); imC.src = state.imgs.closed; imO.src = state.imgs.open || state.imgs.closed;
+    const bear = animalCv('bear', 4), ballCv = sprCv('ball', 2);
+    const P = { x: 180, y: GY, vy: 0, hit: 0, cd: 0 }, O = { x: 620, y: GY, vy: 0, hit: 0, cd: 0, tx: 620, think: 0 };
+    const ball = { x: 180, y: 100, vx: 0, vy: 0, rot: 0 };
+    const sc = { p: 0, o: 0 };
+    let mode = 'wait', timer = 0, server = 'p', msg = '', tx = 180, raf = 0, last = 0, left = false, right = false, alive = true, intro = true;
+
+    const jump = () => { if (P.y >= GY - 1) { P.vy = -600; sfx.flip(); } };
+    const onMove = e => { const r = c.getBoundingClientRect(); tx = (e.clientX - r.left) / r.width * W; };
+    c.addEventListener('pointermove', onMove);
+    c.addEventListener('pointerdown', e => { onMove(e); jump(); });
+    const kd = e => {
+      if (e.key === 'ArrowLeft' || e.key === 'a') left = true; if (e.key === 'ArrowRight' || e.key === 'd') right = true;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') { jump(); }
+    };
+    const ku = e => { if (e.key === 'ArrowLeft' || e.key === 'a') left = false; if (e.key === 'ArrowRight' || e.key === 'd') right = false; };
+    addEventListener('keydown', kd); addEventListener('keyup', ku);
+    cleanup = () => { alive = false; cancelAnimationFrame(raf); removeEventListener('keydown', kd); removeEventListener('keyup', ku); };
+
+    function serve(who) {
+      server = who; mode = 'wait'; timer = 1.1; msg = '¡Listo!';
+      ball.x = who === 'p' ? 190 : 610; ball.y = 96; ball.vx = 0; ball.vy = 0;
+    }
+    function predict() {
+      let x = ball.x, y = ball.y, vx = ball.vx, vy = ball.vy;
+      for (let i = 0; i < 160; i++) {
+        vy += GRAV * .02; x += vx * .02; y += vy * .02;
+        if (x < R || x > W - R) { vx = -vx * .8; x = clamp(x, R, W - R); }
+        if (vy > 0 && y >= GY - 70) return x;
+      }
+      return x;
+    }
+    function hitBy(ch, dir, jumping) {
+      const cx = ch.x, cy = ch.y - 32, d = Math.hypot(ball.x - cx, ball.y - cy);
+      if (ch.cd > 0 || d >= 32 + R) return;
+      const nx = (ball.x - cx) / (d || 1), ny = (ball.y - cy) / (d || 1);
+      ball.x = cx + nx * (32 + R + 1); ball.y = cy + ny * (32 + R + 1);
+      ball.vx = dir * (200 + 170 * clamp(nx * dir, -.4, 1)) + (Math.random() * 40 - 20);
+      ball.vy = -(440 + (jumping ? 90 : 0)) + ny * 60;
+      ch.cd = .22; ch.hit = .3; sfx.pop();
+    }
+    function point(who) {
+      sc[who]++; mode = 'point'; timer = 1.5;
+      if (who === 'p') { msg = '¡Punto para ti!'; sfx.ok(); quip(pick(['¡Punto! ¡Qué buen remate!', '¡Bien, {n}! ¡Así se hace!', '¡Eso es! ¡Sigue así!']), true); }
+      else { msg = 'Punto del oso'; sfx.bad(); quip(pick(['¡Ay! La próxima la devolvemos.', 'Casi… ¡tú puedes, {n}!', 'No pasa nada, ¡vamos con todo!']), true); }
+      if (sc[who] >= WIN) finish(who === 'p');
+    }
+    function finish(win) {
+      mode = 'over';
+      if (win) { state.best.volley++; store.set('best', state.best); love(2); sfx.win(); }
+      setTimeout(() => {
+        if (!alive) return;
+        endCard(win ? '¡Ganaste el partido!' : '¡Buen partido!', 'Resultado: ' + sc.p + ' - ' + sc.o + ' · Victorias: ' + state.best.volley, [['Revancha', volleyGame], ['Juegos', miniMenu], ['Hablar', talkScene]]);
+        say(win ? '¡Ganamos, {n}! ¡Qué equipo tan bueno somos!' : '¡Casi! Nos falta un poquito. ¿Revancha?', { wait: false });
+      }, 1300);
+    }
+    function update(dt) {
+      P.cd = Math.max(0, P.cd - dt); O.cd = Math.max(0, O.cd - dt); P.hit = Math.max(0, P.hit - dt); O.hit = Math.max(0, O.hit - dt);
+      if (left) tx -= 400 * dt; if (right) tx += 400 * dt;
+      tx = clamp(tx, 40, NX - 38);
+      P.x += clamp(tx - P.x, -400 * dt, 400 * dt);
+      if (P.y < GY || P.vy) { P.vy += 1500 * dt; P.y += P.vy * dt; if (P.y >= GY) { P.y = GY; P.vy = 0; } }
+      if (O.y < GY || O.vy) { O.vy += 1500 * dt; O.y += O.vy * dt; if (O.y >= GY) { O.y = GY; O.vy = 0; } }
+      if (mode === 'wait' || mode === 'point') {
+        timer -= dt;
+        if (mode === 'wait') { ball.y = 96 + Math.sin(performance.now() / 160) * 4; if (timer <= 0) { mode = 'play'; msg = ''; } }
+        else if (timer <= 0 && sc.p < WIN && sc.o < WIN) serve(server === 'p' ? 'o' : 'p');
+      }
+      // oso (IA)
+      const lv = Math.min(sc.p, 4), spd = 215 + lv * 22, err = 44 - lv * 5;
+      O.think -= dt;
+      if (O.think <= 0) {
+        O.think = .12;
+        const coming = mode !== 'point' && (ball.x > NX - 30 || ball.vx > 30);
+        O.tx = coming && mode === 'play' ? predict() + (Math.random() * 2 - 1) * err : 620;
+        if (mode === 'wait' && server === 'o') O.tx = ball.x;
+        if (mode === 'play' && O.y >= GY && Math.abs(ball.x - O.x) < 46 && ball.y > GY - 205 && ball.y < GY - 110 && ball.vy > 0 && Math.random() < .55) O.vy = -600;
+      }
+      O.x += clamp(O.tx - O.x, -spd * dt, spd * dt); O.x = clamp(O.x, NX + 38, W - 40);
+      // bola
+      if (mode === 'play' || mode === 'point') {
+        for (let s = 0; s < 2; s++) {
+          const h = dt / 2;
+          ball.vy += GRAV * h; ball.x += ball.vx * h; ball.y += ball.vy * h; ball.rot += ball.vx * h * .02;
+          if (ball.x < R) { ball.x = R; ball.vx = Math.abs(ball.vx) * .8; } if (ball.x > W - R) { ball.x = W - R; ball.vx = -Math.abs(ball.vx) * .8; }
+          if (ball.y < R) { ball.y = R; ball.vy = Math.abs(ball.vy) * .5; }
+          const cx = clamp(ball.x, NX - 4, NX + 4), cy = clamp(ball.y, NT, GY), dx = ball.x - cx, dy = ball.y - cy, dd = Math.hypot(dx, dy);
+          if (dd < R) {
+            const nx = dd ? dx / dd : (ball.vx > 0 ? -1 : 1), ny = dd ? dy / dd : 0, vn = ball.vx * nx + ball.vy * ny;
+            ball.x = cx + nx * (R + .5); ball.y = cy + ny * (R + .5);
+            if (vn < 0) { ball.vx -= 1.75 * vn * nx; ball.vy -= 1.75 * vn * ny; sfx.flip(); }
+          }
+          if (mode === 'play') { hitBy(P, 1, P.y < GY - 4); hitBy(O, -1, O.y < GY - 4); }
+          if (mode === 'play' && ball.y >= GY - R) { ball.y = GY - R; point(ball.x < NX ? 'o' : 'p'); break; }
+        }
+        if (mode === 'point') { ball.vx *= .98; if (ball.y >= GY - R) { ball.y = GY - R; ball.vy = -Math.abs(ball.vy) * .35; if (Math.abs(ball.vy) < 30) ball.vy = 0; } }
+      }
+    }
+    function pill(txt, x, y, w) {
+      g.fillStyle = OUT; g.fillRect(x - w / 2 - 4, y - 4, w + 8, 34); g.fillStyle = '#fff'; g.fillRect(x - w / 2, y, w, 26);
+      g.fillStyle = '#3b4a73'; g.font = "600 20px 'Pixelify Sans',monospace"; g.textAlign = 'center'; g.fillText(txt, x, y + 20);
+    }
+    function draw() {
+      g.clearRect(0, 0, W, H);
+      // arena
+      g.fillStyle = '#f7e3b6'; g.fillRect(0, GY, W, H - GY);
+      g.fillStyle = '#ecc98a'; for (let x = 0; x < W; x += 24) g.fillRect(x + ((x / 24) % 2) * 10, GY + 8 + ((x / 24) % 3) * 4, 8, 4);
+      g.fillStyle = '#e6b86e'; g.fillRect(0, GY, W, 4);
+      // red
+      for (let y = NT; y < GY; y += 6) { g.fillStyle = (y / 6) % 2 ? '#ffffff' : '#cfe6fb'; g.fillRect(NX - 5, y, 10, 6); }
+      g.fillStyle = OUT; g.fillRect(NX - 7, NT - 4, 14, 4); g.fillRect(NX - 7, NT, 2, GY - NT); g.fillRect(NX + 5, NT, 2, GY - NT);
+      g.fillStyle = '#ff9fc2'; g.fillRect(NX - 7, NT - 4, 14, 3);
+      // sombras
+      const sh = (x, w, a) => { g.fillStyle = 'rgba(80,100,150,' + a + ')'; g.fillRect(Math.round(x - w / 2), GY - 2, Math.round(w), 6); };
+      sh(P.x, 66 - (GY - P.y) * .25, .25); sh(O.x, 62 - (GY - O.y) * .25, .25); sh(ball.x, 22 * clamp(1.2 - (GY - ball.y) / 260, .4, 1), .25);
+      // personajes
+      g.drawImage(bear, Math.round(O.x - 32), Math.round(O.y - 80 - (O.hit > 0 ? 3 : 0)));
+      const sz = 90, im = (P.hit > 0 || (intro && false)) ? imO : imC;
+      if (im.complete && im.naturalWidth) g.drawImage(im, Math.round(P.x - sz / 2), Math.round(P.y - sz * .83), sz, sz);
+      // bola
+      g.save(); g.translate(Math.round(ball.x), Math.round(ball.y)); g.rotate(ball.rot); g.drawImage(ballCv, -12, -12); g.restore();
+      // marcador
+      pill('Tú ' + sc.p + '  -  ' + sc.o + ' Oso', 400, 8, 188);
+      if (msg) { g.font = "600 30px 'Pixelify Sans',monospace"; g.textAlign = 'center'; g.lineWidth = 6; g.strokeStyle = '#fff'; g.strokeText(msg, 400, 100); g.fillStyle = '#e0709f'; g.fillText(msg, 400, 100); }
+    }
+    function frame(ts) { raf = requestAnimationFrame(frame); const dt = Math.min(50, ts - last) / 1000; last = ts; if (mode !== 'over' || true) { if (!intro) update(dt); } draw(); }
+    raf = requestAnimationFrame(frame);
+    serve('p');
+    say('¡Vóley! Mueve el mouse (o usa ← →) y salta con clic o espacio. ¡Primero en llegar a 5 gana!', { wait: false }).then(() => { intro = false; last = performance.now(); });
+  });
+}
+
+/* =====================================================
+   Pastelería de canela: sprites de los postres
+   ===================================================== */
+const TOPN = { g: 'glaseado', s: 'chispas', c: 'cereza' };
+const BASEN = { roll: 'Rollito', cup: 'Cupcake' };
+function itemCv(base, tops, sc, st) {
+  tops = tops || []; st = st || 'done';
+  return pix('item_' + base + '_' + tops.slice().sort().join('') + '_' + st, 12, 12, sc, p => {
+    const hasG = tops.includes('g'), hasS = tops.includes('s'), hasC = tops.includes('c');
+    const SPK = ['#ff6fa0', '#6fb4ff', '#ffd75e', '#8fe3c4', '#ff6fa0', '#6fb4ff'];
+    if (base === 'roll') {
+      const PR = { done: PAL.pastry, raw: { d: '#d9b86a', m: '#f2dc9a', l: '#fff0c4', w: '#fffbe8' }, burnt: PAL.burnt }[st];
+      MAPS.pastry.forEach((row, j) => [...row].forEach((ch, i) => { const col = PR[ch]; if (col) p(i, j + 1, 1, 1, col); }));
+      if (hasG) [[2, 3, 7], [4, 1, 9], [6, 1, 9], [8, 2, 8]].forEach(([y, a, b]) => p(a, y + 1, b - a + 1, 1, '#fff4fa'));
+      if (hasS) [[3, 3], [7, 2], [2, 5], [8, 5], [4, 8], [7, 7]].forEach(([x, y], k) => p(x, y + 1, 1, 1, SPK[k]));
+      if (hasC) { p(4, 5, 2, 2, '#e8334a'); p(4, 5, 1, 1, '#ff9aa8'); p(6, 4, 1, 1, '#4a7a3a'); }
+    } else {
+      const ck = { done: ['#e8b66f', '#b98342'], raw: ['#f6e3b4', '#dcc58a'], burnt: ['#4a3228', '#2d1f1a'] }[st];
+      for (let y = 7; y <= 11; y++) {
+        const x0 = y >= 10 ? 3 : 2, x1 = y >= 10 ? 8 : 9;
+        for (let x = x0; x <= x1; x++) p(x, y, 1, 1, x % 2 ? '#ff9fc2' : '#ffc4d8');
+        p(x0, y, 1, 1, '#e0709f'); p(x1, y, 1, 1, '#e0709f');
+      }
+      const dome = hasG ? [[5, 2, 9], [6, 1, 10]] : [[4, 3, 8], [5, 2, 9], [6, 1, 10]];
+      dome.forEach(([y, a, b]) => { p(a, y, b - a + 1, 1, ck[0]); p(a, y, 1, 1, ck[1]); p(b, y, 1, 1, ck[1]); });
+      if (hasG) [[4, 1, 10], [3, 2, 9], [2, 3, 8], [1, 5, 6]].forEach(([y, a, b]) => { p(a, y, b - a + 1, 1, '#fff4fa'); p(a, y, 1, 1, '#ffc4d8'); p(b, y, 1, 1, '#ffc4d8'); });
+      if (hasS) (hasG ? [[3, 4], [8, 4], [6, 3], [4, 2]] : [[4, 5], [7, 5], [5, 4], [3, 6]]).forEach(([x, y], k) => p(x, y, 1, 1, SPK[k]));
+      if (hasC) { const cy = hasG ? 0 : 2; p(5, cy, 2, 2, '#e8334a'); p(5, cy, 1, 1, '#ff9aa8'); }
+    }
+  });
+}
+function itemImg(base, tops, sc, st, cls) {
+  const i = document.createElement('img'); i.src = itemCv(base, tops, sc, st).toDataURL(); i.alt = ''; i.draggable = false; if (cls) i.className = cls; return i;
+}
+function topIcon(t, sc) {
+  return pimg('top_' + t, 8, 8, sc, p => {
+    if (t === 'g') { p(1, 3, 6, 3, '#fff4fa'); p(2, 2, 4, 1, '#fff4fa'); p(3, 1, 2, 1, '#fff4fa'); p(1, 6, 1, 1, '#ffc4d8'); p(6, 6, 1, 1, '#ffc4d8'); p(0, 3, 1, 3, '#ffc4d8'); p(7, 3, 1, 3, '#ffc4d8'); p(1, 6, 6, 1, '#ffc4d8'); }
+    else if (t === 's') { p(0, 1, 3, 1, '#ff6fa0'); p(4, 2, 3, 1, '#6fb4ff'); p(1, 4, 3, 1, '#ffd75e'); p(5, 5, 3, 1, '#8fe3c4'); p(2, 6, 3, 1, '#ff6fa0'); }
+    else { p(2, 3, 4, 4, '#e8334a'); p(2, 3, 1, 1, '#ff9aa8'); p(4, 0, 1, 3, '#4a7a3a'); p(5, 0, 1, 1, '#4a7a3a'); }
+  });
+}
+function hatImg(sc) {
+  return pimg('hat', 14, 9, sc, p => {
+    [[0, 4, 9], [1, 2, 11], [2, 1, 12], [3, 1, 12], [4, 2, 11], [5, 3, 10], [6, 3, 10], [7, 3, 10]].forEach(([y, a, b]) => {
+      p(a, y, b - a + 1, 1, y >= 6 ? '#dbe6f7' : '#ffffff'); p(a, y, 1, 1, '#9fb7d6'); p(b, y, 1, 1, '#9fb7d6');
+    });
+    p(3, 8, 8, 1, '#9fb7d6'); p(4, 0, 6, 1, '#9fb7d6');
+  });
+}
+
+document.head.appendChild(Object.assign(document.createElement('style'), {
+  textContent: `
+.bk{position:absolute;inset:0}
+.bk .tpill{position:absolute;left:300px;top:0;display:flex;gap:16px;align-items:center;font-size:16px;background:#fff;border:3px solid var(--blue-d);box-shadow:inset 0 0 0 2px var(--blue-l);padding:0 10px;z-index:3}
+.bk .tpill span{display:flex;align-items:center;gap:6px}
+.cust{position:absolute;top:34px;width:200px;height:128px;cursor:pointer;transition:transform .35s,opacity .35s}
+.cust.in{animation:custIn .4s ease-out}
+@keyframes custIn{from{transform:translateX(50px);opacity:0}to{transform:none;opacity:1}}
+.cust.leave{opacity:0;transform:translateY(-16px) scale(.9)}
+.cust.no{animation:shake .3s}
+@keyframes shake{25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+.cust .bub{position:absolute;left:0;top:0;width:190px;height:60px;background:#fff;border:3px solid var(--blue-d);box-shadow:inset 0 0 0 2px var(--pink);display:flex;align-items:center;gap:8px;padding:0 8px;font-size:13px;line-height:15px;color:var(--ink)}
+.cust .bub b{font-size:15px;display:block}
+.cust .bub::after{content:"";position:absolute;left:18px;bottom:-12px;border:8px solid transparent;border-top:10px solid var(--blue-d);border-bottom:0}
+.cust .an{position:absolute;left:4px;top:68px}
+.cust.happy .an{animation:hop .36s 3}
+.cust .pat{position:absolute;left:62px;top:104px;width:120px;height:12px;background:#fff;border:3px solid var(--blue-d)}
+.cust .pat i{display:block;height:100%}
+.cust .face{position:absolute;left:62px;top:80px;font-size:15px;color:var(--ink)}
+.oven{position:absolute;left:152px;top:172px;width:214px;height:116px;padding:8px;display:flex;gap:10px;background:#b9c9e6;border:4px solid var(--blue-d);box-shadow:inset 0 0 0 3px #e1ebfa,0 5px 0 var(--blue-d)}
+.oven .lbl{position:absolute;left:50%;top:-18px;transform:translateX(-50%);font-size:13px;background:var(--pink);color:#fff;padding:0 8px;border:2px solid var(--pink-d);text-shadow:1px 1px 0 var(--pink-d)}
+.slot{flex:1;position:relative;background:#2f3b5c;border:4px solid #7d93c4;cursor:pointer;display:grid;place-items:center;transition:background .3s}
+.slot.baking{background:#7a3b2a;box-shadow:inset 0 0 22px #ffb347}
+.slot.done{background:#9d5a2c;box-shadow:inset 0 0 18px #ffe08a;animation:pulse .6s ease-in-out infinite alternate}
+.slot.burnt{background:#3a2a2a}
+@keyframes pulse{to{box-shadow:inset 0 0 6px #ffe08a;transform:scale(1.03)}}
+.slot .bar{position:absolute;left:4px;right:4px;bottom:4px;height:8px;background:rgba(0,0,0,.4)}
+.slot .bar i{display:block;height:100%;background:#ffd75e}
+.slot img{margin-bottom:10px}
+.plate{position:absolute;left:380px;top:192px;width:112px;height:96px}
+.plate .dish{position:absolute;left:4px;right:4px;bottom:6px;height:32px;border-radius:50%;background:#fff;border:4px solid var(--blue-d);box-shadow:inset 0 0 0 3px var(--pink)}
+.plate img{position:absolute;left:50%;bottom:22px;transform:translateX(-50%)}
+.plate .lbl{position:absolute;left:50%;top:-16px;transform:translateX(-50%);font-size:13px;background:#fff;border:2px solid var(--blue-d);padding:0 8px}
+.bgrid{position:absolute;left:504px;top:172px;width:288px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.bb{height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:14px;line-height:14px;cursor:pointer;background:#fff;color:var(--ink);border:3px solid var(--blue-d);box-shadow:inset 0 0 0 2px var(--blue-l),0 4px 0 var(--blue-d);transition:transform .08s}
+.bb:hover{background:#fff0f6;border-color:var(--pink-d);box-shadow:inset 0 0 0 2px var(--pink),0 4px 0 var(--pink-d);transform:translateY(-2px)}
+.bb:active{transform:translateY(2px)}
+.chef{position:absolute;left:12px;top:158px;width:132px;height:132px;z-index:1}
+.chef .hat{position:absolute;left:38px;top:8px;z-index:3;animation:bob 2.4s ease-in-out infinite}
+.chef .cin{position:absolute;inset:0;animation:bob 2.4s ease-in-out infinite}
+.coinfx{position:absolute;z-index:70;pointer-events:none;font-size:24px;font-weight:600;color:#d99a1e;text-shadow:2px 0 #fff,-2px 0 #fff,0 2px #fff,0 -2px #fff;animation:floatUp 1.1s ease-out forwards;--dx:0px}
+`}));
+
+/* =====================================================
+   Pastelería de canela: el juego
+   ===================================================== */
+function bakeryGame() {
+  go('bakery', () => {
+    const DAY = 90, BAKE = 4, BURN = 6, SLOTX = [150, 365, 580];
+    const root = div('bk'); play.append(root);
+    const pill = div('tpill'); root.append(pill);
+    const chef = div('chef'); chef.innerHTML = '<div class="cin"><img class="closed" alt=""><img class="open" alt=""></div>';
+    const hat = hatImg(4); hat.className = 'hat'; chef.append(hat); root.append(chef); applyImages();
+    const oven = div('oven', '<div class="lbl">Horno</div>'); root.append(oven);
+    const plateEl = div('plate', '<div class="dish"></div><div class="lbl">Plato</div>'); root.append(plateEl);
+    const grid = div('bgrid'); root.append(grid);
+
+    let time = DAY, coins = 0, served = 0, lost = 0, running = false, over = false, nextSpawn = 1, plate = null, timerId = 0;
+    const custs = [null, null, null], ovens = [{ s: 'empty' }, { s: 'empty' }], slotEls = [];
+
+    // horno
+    ovens.forEach((o, i) => { const s = div('slot'); s.onclick = () => takeOven(i); oven.append(s); slotEls.push(s); });
+    function renderSlot(i) {
+      const o = ovens[i], el = slotEls[i]; el.className = 'slot ' + (o.s === 'empty' ? '' : o.s); el.innerHTML = '';
+      if (o.s === 'empty') return;
+      el.append(itemImg(o.base, [], 5, o.s === 'baking' ? 'raw' : o.s === 'done' ? 'done' : 'burnt'));
+      const bar = div('bar'); bar.innerHTML = '<i></i>'; el.append(bar);
+    }
+    function renderPlate() {
+      plateEl.querySelectorAll('img').forEach(n => n.remove());
+      if (plate) plateEl.append(itemImg(plate.base, plate.tops, 5, 'done'));
+    }
+    function say2(t, force) { quip(t, force); }
+    function takeOven(i) {
+      if (!running) return; const o = ovens[i];
+      if (o.s === 'done') {
+        if (plate) { sfx.bad(); say2('El plato ya está ocupado. ¡Entrega o tíralo primero!'); return; }
+        plate = { base: o.base, tops: [] }; ovens[i] = { s: 'empty' }; sfx.pop(); renderSlot(i); renderPlate();
+      } else if (o.s === 'burnt') { ovens[i] = { s: 'empty' }; renderSlot(i); sfx.bad(); say2(pick(['¡Uy! Ese se quemó. A limpiar el horno.', 'Ay, se pasó de horneado…'])); }
+    }
+    function addDough(base) {
+      if (!running) return; const i = ovens.findIndex(o => o.s === 'empty');
+      if (i < 0) { sfx.bad(); say2('¡El horno está lleno! Saca algo primero.'); return; }
+      ovens[i] = { s: 'baking', base, t: 0 }; sfx.flip(); renderSlot(i);
+    }
+    function addTop(t) {
+      if (!running) return;
+      if (!plate) { sfx.bad(); say2('Primero saca algo del horno y ponlo en el plato.'); return; }
+      if (plate.tops.includes(t)) { sfx.bad(); return; }
+      plate.tops.push(t); sfx.pop(); renderPlate();
+    }
+    function trash() { if (!plate) return; plate = null; sfx.bad(); renderPlate(); }
+
+    // botones
+    [['Masa rollito', () => itemImg('roll', [], 3, 'raw'), () => addDough('roll')],
+    ['Masa cupcake', () => itemImg('cup', [], 3, 'raw'), () => addDough('cup')],
+    ['Tirar plato', () => spimg('burnt', 3), trash],
+    ['Glaseado', () => topIcon('g', 4), () => addTop('g')],
+    ['Chispas', () => topIcon('s', 4), () => addTop('s')],
+    ['Cereza', () => topIcon('c', 4), () => addTop('c')]].forEach(([t, ic, f]) => {
+      const b = document.createElement('button'); b.className = 'bb'; b.append(ic(), document.createTextNode(t)); b.onclick = f; grid.append(b);
+    });
+
+    // clientes
+    function newOrder() {
+      const base = Math.random() < .5 ? 'roll' : 'cup';
+      const n = served < 2 ? Math.floor(Math.random() * 2) : served < 6 ? Math.floor(Math.random() * 3) : 1 + Math.floor(Math.random() * 3);
+      return { base, tops: shuffle(['g', 's', 'c']).slice(0, n) };
+    }
+    const orderTxt = o => '<b>' + BASEN[o.base] + '</b>' + (o.tops.length ? 'con ' + o.tops.map(t => TOPN[t]).join(', ') : 'sencillo');
+    function spawn() {
+      const i = custs.findIndex(c => !c); if (i < 0) return;
+      const o = newOrder(), kind = pick(['bear', 'cat', 'bunny', 'chick', 'panda']), max = 24 + o.tops.length * 7;
+      const el = div('cust in'); el.style.left = SLOTX[i] + 'px';
+      const bub = div('bub'); bub.append(itemImg(o.base, o.tops, 3), div('', orderTxt(o)));
+      const an = div('an'); an.append(animalImg(kind, 3));
+      const pat = div('pat', '<i></i>'); el.append(bub, an, pat);
+      el.onclick = () => serve(i); root.append(el);
+      custs[i] = { el, o, p: max, max, bar: pat.firstChild }; sfx.blip();
+    }
+    function remove(i, cls) { const c = custs[i]; if (!c) return; custs[i] = null; c.el.classList.add(cls || 'leave'); setTimeout(() => c.el.remove(), 450); }
+    function serve(i) {
+      const c = custs[i]; if (!running || !c) return;
+      if (!plate) { sfx.bad(); say2('Primero prepara el pedido en el plato.'); return; }
+      const ok = plate.base === c.o.base && plate.tops.length === c.o.tops.length && c.o.tops.every(t => plate.tops.includes(t));
+      if (!ok) { c.el.classList.remove('no'); void c.el.offsetWidth; c.el.classList.add('no'); sfx.bad(); say2(pick(['Mmm, ese no es el pedido. ¡Revisa la burbuja!', 'Casi… pero no es lo que pidió.'])); return; }
+      const price = 5 + c.o.tops.length * 3 + (c.p > c.max * .5 ? 2 : 0);
+      coins += price; served++; plate = null; renderPlate(); sfx.ok();
+      c.el.classList.add('happy'); c.el.style.pointerEvents = 'none';
+      const f = div('coinfx', '+' + price); f.style.left = (SLOTX[i] + 70 + 0) + 'px'; f.style.top = (44 + 50) + 'px'; stage.append(f); setTimeout(() => f.remove(), 1200);
+      burst(SLOTX[i] + 40, 44 + 90, 4);
+      custs[i] = null; setTimeout(() => { c.el.classList.add('leave'); setTimeout(() => c.el.remove(), 450); }, 1000);
+      say2(pick(['¡Qué rico quedó! El cliente está feliz.', '¡Excelente servicio, {n}!', '¡Otro cliente contento!', '¡Así se hace! ¡Huele delicioso!']), true);
+    }
+
+    function tick() {
+      if (!running) return; const dt = .1;
+      time -= dt; nextSpawn -= dt;
+      if (nextSpawn <= 0 && time > 6) { spawn(); nextSpawn = Math.max(4.5, 8 - served * .3) + Math.random() * 2.5; }
+      custs.forEach((c, i) => {
+        if (!c) return; c.p -= dt; const r = clamp(c.p / c.max, 0, 1);
+        c.bar.style.width = (r * 100) + '%'; c.bar.style.background = r > .5 ? '#7fd6a4' : r > .25 ? '#ffd75e' : '#ff7a8a';
+        if (c.p <= 0) { lost++; remove(i); sfx.bad(); say2(pick(['¡Oh no, se fue sin su pedido!', 'Se cansó de esperar… ¡más rápido, {n}!'])); }
+      });
+      ovens.forEach((o, i) => {
+        if (o.s === 'baking') { o.t += dt; slotEls[i].querySelector('.bar i').style.width = (o.t / BAKE * 100) + '%'; if (o.t >= BAKE) { o.s = 'done'; o.t = 0; renderSlot(i); sfx.ok(); say2('¡Ya salió uno! Huele a canela.'); } }
+        else if (o.s === 'done') { o.t += dt; slotEls[i].querySelector('.bar i').style.width = (100 - o.t / BURN * 100) + '%'; if (o.t >= BURN) { o.s = 'burnt'; renderSlot(i); sfx.bad(); say2('¡Uy! Se quemó uno…'); } }
+      });
+      pill.innerHTML = '<span>Tiempo: ' + Math.max(0, Math.ceil(time)) + '</span><span></span>';
+      const sp = pill.lastChild; sp.append(sprImg('coin', 2), document.createTextNode(coins));
+      if (time <= 0) end();
+    }
+    function end() {
+      running = false; over = true; clearInterval(timerId);
+      custs.forEach((c, i) => remove(i));
+      const nb = coins > state.best.bakery; if (nb) { state.best.bakery = coins; store.set('best', state.best); }
+      if (coins >= 40) love(coins >= 100 ? 2 : 1); sfx.win();
+      endCard('¡Se acabó el día!', 'Ganaste ' + coins + ' monedas · ' + served + ' clientes felices' + (nb ? ' · ¡nuevo récord!' : ''), [['Otro día', bakeryGame], ['Juegos', miniMenu], ['Hablar', talkScene]]);
+      say(coins >= 100 ? '¡Wow, {n}! ¡Somos las mejores pasteleras del cielo!' : coins >= 40 ? '¡Muy bien! La pastelería quedó llenita de clientes felices.' : '¡Buen primer día! Mañana lo hacemos todavía mejor.', { wait: false });
+    }
+    cleanup = () => { running = false; clearInterval(timerId); };
+
+    renderPlate(); pill.innerHTML = '<span>Tiempo: ' + DAY + '</span><span></span>';
+    const rid = runId;
+    (async () => {
+      await say('¡Bienvenida a nuestra pastelería, {n}! Yo me pongo el gorrito de chef y tú atiendes.');
+      if (rid !== runId) return;
+      await say('Pon masa en el horno y espera a que se dore. Sácala al plato, decórala como pide el cliente y haz clic en él para entregarla.');
+      if (rid !== runId) return;
+      await say('¡Cuidado, si te pasas de horneado se quema! ¿Lista? ¡Abrimos!', { wait: false });
+      if (rid !== runId) return;
+      running = true; timerId = setInterval(tick, 100);
+    })();
+  });
+}
+
+document.head.appendChild(Object.assign(document.createElement('style'), {
+  textContent: `
+.cups{position:absolute;inset:0}
+.cups .minfo{position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:16px;padding:0 12px;white-space:nowrap}
+.cups .table{position:absolute;left:110px;right:110px;top:236px;height:26px;background:#f7e3b6;border:4px solid var(--blue-d);box-shadow:inset 0 0 0 3px #fff3d8,0 6px 0 rgba(63,120,192,.35)}
+.cw{position:absolute;top:104px;width:112px;height:150px;cursor:pointer;transition:left var(--sw,.3s) ease-in-out}
+.cw .cupimg{position:absolute;left:0;top:0;z-index:2;transition:transform .35s}
+.cw.up .cupimg{transform:translateY(-72px)}
+.cw .roll{position:absolute;left:28px;bottom:24px;z-index:1}
+.cw.wrong .cupimg{animation:shake .3s}
+.rps{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
+.rps .row{display:flex;align-items:center;gap:18px}
+.rbox{width:132px;height:104px;display:grid;place-items:center;background:var(--paper);font-size:44px;color:var(--pink-d)}
+.rbox img{position:relative;z-index:2}
+.rbox.shk img,.rbox.shk{animation:shake .25s 3}
+.rps .vs{font-size:26px;font-weight:600;color:var(--blue-d)}
+.rps .res{font-size:21px;min-height:28px;background:#fff;border:3px solid var(--blue-d);padding:0 14px;box-shadow:inset 0 0 0 2px var(--blue-l)}
+.rps .pads{gap:16px}
+.rps .pad{width:98px;height:92px}
+.rps .lab{font-size:14px;position:absolute;bottom:2px;color:var(--ink)}
+.rps .pad{position:relative;padding-bottom:14px}
+`}));
+
+/* =====================================================
+   ¿Dónde está el rollito? (juego de los vasitos)
+   ===================================================== */
+function cupsGame() {
+  go('cups', () => {
+    const rid = runId, SX = [170, 344, 518];
+    const root = div('cups'), info = div('minfo', 'Ronda 1 · Racha 0'); root.append(info, div('table'));
+    const cws = [0, 1, 2].map(k => {
+      const w = div('cw'); w.style.left = SX[k] + 'px';
+      w.append(spimg('pastry', 5, 'roll'), sprImg('cup', 8, 'cupimg')); w.onclick = () => choose_(k); root.append(w); return w;
+    });
+    cws.forEach(w => w.querySelector('.roll').style.display = 'none');
+    play.append(root);
+    let pos = [0, 1, 2], target = 1, round = 0, streak = 0, accept = false, over = false;
+    const alive = () => rid === runId;
+    const setPos = () => cws.forEach((w, k) => w.style.left = SX[pos[k]] + 'px');
+    const showRoll = k => cws.forEach((w, i) => w.querySelector('.roll').style.display = i === k ? '' : 'none');
+
+    async function nextRound() {
+      round++; accept = false; info.textContent = 'Ronda ' + round + ' · Racha ' + streak;
+      cws.forEach(w => w.classList.remove('up', 'wrong'));
+      pos = [0, 1, 2]; setPos(); target = Math.floor(Math.random() * 3); showRoll(target);
+      await sleep(500); if (!alive()) return;
+      cws[target].classList.add('up'); sfx.pop(); await sleep(1100); if (!alive()) return;
+      cws[target].classList.remove('up'); await sleep(450); if (!alive()) return;
+      const swaps = Math.min(14, 3 + round * 1.3 | 0), ms = Math.max(170, 430 - round * 32);
+      root.style.setProperty('--sw', (ms / 1000) + 's');
+      for (let i = 0; i < swaps; i++) {
+        const a = Math.floor(Math.random() * 3); let b = Math.floor(Math.random() * 3); while (b === a) b = Math.floor(Math.random() * 3);
+        [pos[a], pos[b]] = [pos[b], pos[a]]; setPos(); sfx.flip(); await sleep(ms + 40); if (!alive()) return;
+      }
+      info.textContent = 'Ronda ' + round + ' · ¿Dónde está?'; accept = true;
+    }
+    function choose_(k) {
+      if (!accept || over) return; accept = false;
+      cws[k].classList.add('up');
+      if (k === target) {
+        streak++; sfx.ok(); info.textContent = '¡Correcto! Racha ' + streak;
+        if (streak > state.best.cups) { state.best.cups = streak; store.set('best', state.best); }
+        if (streak % 3 === 0) love(1);
+        quip(pick(['¡Sí! ¡Ese era!', '¡Qué buenos ojos, {n}!', '¡Lo encontraste!', '¡Increíble, no te despistas!']), true);
+        setTimeout(() => { if (alive()) nextRound(); }, 1100);
+      } else {
+        over = true; sfx.bad(); cws[k].classList.add('wrong');
+        setTimeout(() => {
+          if (!alive()) return; cws[k].classList.remove('up'); cws[target].classList.add('up');
+          setTimeout(() => {
+            if (!alive()) return;
+            endCard('¡Ay, era otro!', 'Racha de ' + streak + ' · Récord: ' + state.best.cups, [['Otra vez', cupsGame], ['Juegos', miniMenu], ['Hablar', talkScene]]);
+            say(streak >= 6 ? '¡Qué memoria, {n}! Casi no te la gano.' : '¡Estuvo difícil! Inténtalo otra vez, tú puedes.', { wait: false });
+          }, 1100);
+        }, 700);
+      }
+    }
+    say('Mira dónde está el rollito, ¡y síguelo con la vista cuando mezcle los vasitos!', { wait: false }).then(() => { if (alive()) nextRound(); });
+  });
+}
+
+/* =====================================================
+   Piedra, papel o tijera contra Cinna
+   ===================================================== */
+function rpsGame() {
+  go('rps', () => {
+    const rid = runId, alive = () => rid === runId, NAMES = ['Piedra', 'Papel', 'Tijera'], ICONS = ['rock', 'paper', 'scissors'];
+    let me = 0, her = 0, busy = false;
+    const root = div('rps'), score = div('minfo', ''), row = div('row'), res = div('res', 'Elige tu jugada');
+    const mine = div('rbox pbox', '?'), hers = div('rbox pbox', '?');
+    row.append(mine, div('vs', 'VS'), hers);
+    const pads = div('pads');
+    ICONS.forEach((ic, i) => {
+      const b = document.createElement('button'); b.className = 'pad'; b.append(sprImg(ic, 4), div('lab', NAMES[i])); b.onclick = () => play_(i); pads.append(b);
+    });
+    root.append(score, row, res, pads); play.append(root);
+    const upd = () => { score.textContent = 'Tú ' + me + '  -  ' + her + ' Cinna (primero a 3)'; }; upd();
+    const show = (box, i) => { box.innerHTML = ''; box.append(sprImg(ICONS[i], 7)); };
+    async function play_(i) {
+      if (busy) return; busy = true; sfx.flip();
+      const h = Math.floor(Math.random() * 3);
+      mine.textContent = '?'; hers.textContent = '?'; res.textContent = 'Piedra… papel… ¡o tijera!';
+      [mine, hers].forEach(b => { b.classList.remove('shk'); void b.offsetWidth; b.classList.add('shk'); });
+      for (let k = 0; k < 3; k++) { tone(400 + k * 80, .1, 'square', .05); await sleep(250); }
+      if (!alive()) return;
+      show(mine, i); show(hers, h); sfx.pop();
+      const r = (i - h + 3) % 3;   // 0 empate, 1 gana jugador, 2 gana Cinna
+      if (r === 0) { res.textContent = '¡Empate!'; quip(pick(['¡Pensamos igual!', '¡Empate! Otra vez.']), true); }
+      else if (r === 1) { me++; res.textContent = '¡Ganaste esta!'; sfx.ok(); quip(pick(['¡Ay, me ganaste!', '¡Bien jugado, {n}!', '¡Qué suerte tienes!']), true); }
+      else { her++; res.textContent = 'Punto para Cinna'; sfx.bad(); quip(pick(['¡Jiji, esta fue mía!', '¡Te gané! Pero casi.', '¡Punto para mí!']), true); }
+      upd(); await sleep(1100); if (!alive()) return;
+      if (me >= 3 || her >= 3) {
+        const win = me >= 3;
+        if (win) { state.best.rps++; store.set('best', state.best); love(1); sfx.win(); }
+        endCard(win ? '¡Ganaste la partida!' : '¡Ganó Cinna!', 'Resultado: ' + me + ' - ' + her + ' · Victorias: ' + state.best.rps, [['Revancha', rpsGame], ['Juegos', miniMenu], ['Hablar', talkScene]]);
+        say(win ? '¡Me ganaste, {n}! La próxima vez no tendré piedad… ¡jiji!' : '¡Gané! ¿Revancha? Prometo ser amable.', { wait: false });
+        return;
+      }
+      res.textContent = 'Elige tu jugada'; busy = false;
+    }
+    say('¡Piedra, papel o tijera! El primero en llegar a 3 gana. ¿Lista, {n}?', { wait: false });
   });
 }
 
