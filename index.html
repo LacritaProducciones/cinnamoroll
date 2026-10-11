@@ -1199,64 +1199,297 @@ document.head.appendChild(Object.assign(document.createElement('style'), {
 /* =====================================================
    Pastelería de canela: el juego
    ===================================================== */
+/* =====================================================
+   Pastelería de canela v2: cocina profesional
+   ===================================================== */
+const KUP = {
+  speed:   { name: 'Horno turbo',      desc: 'Hornea más rápido',            cost: [20, 45, 90],  val: [4, 3.2, 2.5, 1.9], fmt: v => v + ' s' },
+  slots:   { name: 'Más bandejas',     desc: 'Más espacios en el horno',     cost: [30, 70],      val: [2, 3, 4],          fmt: v => v + ' espacios' },
+  plates:  { name: 'Más platos',       desc: 'Prepara varios pedidos a la vez', cost: [25, 60],   val: [1, 2, 3],          fmt: v => v + (v === 1 ? ' plato' : ' platos') },
+  gloves:  { name: 'Guantes de cocina', desc: 'Tarda más en quemarse',       cost: [20, 50],      val: [6, 9, 13],         fmt: v => v + ' s' },
+  patience:{ name: 'Música relajante', desc: 'Los clientes esperan más',     cost: [25, 55, 100], val: [1, 1.25, 1.5, 1.8], fmt: v => '+' + Math.round((v - 1) * 100) + '%' }
+};
+const KUP_ORDER = ['speed', 'slots', 'plates', 'gloves', 'patience'];
+const kSave = () => Object.assign({ bank: 0, days: 0, up: {} }, store.get('bk2', {}));
+const kPut = d => store.set('bk2', d);
+const kLvl = (d, k) => Math.min(d.up[k] || 0, KUP[k].val.length - 1);
+const kVal = (d, k) => KUP[k].val[kLvl(d, k)];
+
+const kSpr = {
+  trash: () => pimg('k_trash', 14, 15, 5, p => {
+    const O = '#3f78c0', B = '#9fd0ff', L = '#d6ecff', S = '#7fb4ea';
+    for (let y = 3; y < 15; y++) { const a = y < 4 ? 2 : 2 + Math.floor((y - 3) / 6), b = 13 - a; p(a, y, b - a, 1, (y % 3 === 0) ? S : B); p(a, y, 1, 1, O); p(b - 1, y, 1, 1, O); }
+    p(3, 14, 8, 1, O); [4, 7, 10].forEach(x => p(x, 5, 1, 8, L));
+    p(2, 3, 10, 1, O);
+  }),
+  lid: () => pimg('k_lid', 14, 4, 5, p => {
+    p(1, 1, 12, 2, '#7fb4ea'); p(1, 0, 12, 1, '#3f78c0'); p(1, 3, 12, 1, '#3f78c0'); p(5, 0, 4, 1, '#d6ecff');
+  }),
+  lock: () => pimg('k_lock', 9, 10, 3, p => {
+    p(2, 0, 5, 1, '#7a8bb0'); p(1, 1, 1, 3, '#7a8bb0'); p(7, 1, 1, 3, '#7a8bb0'); p(0, 4, 9, 6, '#ffd75e'); p(0, 4, 9, 1, '#d99a1e'); p(0, 9, 9, 1, '#d99a1e'); p(4, 6, 1, 2, '#8a5a38');
+  }),
+  puff: () => pimg('k_puff', 8, 7, 3, p => { p(2, 0, 4, 1, '#fff'); p(1, 1, 6, 5, '#fff'); p(2, 6, 4, 1, '#fff'); p(1, 1, 6, 1, '#e6f2ff'); }),
+  up: () => pimg('k_up', 9, 9, 3, p => { p(4, 0, 1, 1, '#ff6fa0'); p(3, 1, 3, 1, '#ff6fa0'); p(2, 2, 5, 1, '#ff6fa0'); p(1, 3, 7, 1, '#ff6fa0'); p(3, 4, 3, 5, '#ff6fa0'); })
+};
+
+document.head.appendChild(Object.assign(document.createElement('style'), {
+  textContent: `
+#stage[data-scene=bakery] #dlg{height:92px;bottom:8px;padding:10px 22px 6px 92px}
+#stage[data-scene=bakery] #dlg .tab{width:62px;height:62px;left:14px;top:12px}
+#stage[data-scene=bakery] #dlg .tabR,#stage[data-scene=bakery] #dlg .bow{display:none}
+#stage[data-scene=bakery] #dlg .strip{right:60px}
+#stage[data-scene=bakery] #dlgTxt{font-size:17px;line-height:21px}
+#stage[data-scene=bakery] #arrow{right:20px;bottom:10px}
+.kt{position:absolute;left:0;top:0;width:800px;height:346px;touch-action:none}
+.kt *{touch-action:none}
+.kt .shop{position:absolute;left:0;right:0;top:6px;height:122px;background:repeating-linear-gradient(90deg,#ffe3ee 0 22px,#fff0f6 22px 44px);border-top:4px solid var(--pink-d);border-bottom:4px solid var(--blue-d);opacity:.96}
+.kt .shop::before{content:"";position:absolute;left:0;right:0;top:0;height:10px;background:repeating-linear-gradient(90deg,#ff9fc2 0 22px,#fff 22px 44px)}
+.kt .bar{position:absolute;left:0;right:0;top:112px;height:24px;background:linear-gradient(#f3d9a4,#d8b46f);border-top:4px solid #8a5a38;border-bottom:4px solid #8a5a38;z-index:2;box-shadow:0 5px 0 rgba(63,120,192,.3)}
+.kt .bar::after{content:"♥  Pastelería Nube de Canela  ♥";position:absolute;left:0;right:0;top:-1px;text-align:center;font-size:14px;color:#8a5a38;letter-spacing:1px}
+.kt .kit{position:absolute;left:0;right:0;top:140px;bottom:0;background:
+  linear-gradient(#cfe1f5 2px,transparent 2px) 0 0/32px 24px,linear-gradient(90deg,#cfe1f5 2px,transparent 2px) 0 0/32px 24px,#eef6ff;border-top:4px solid var(--blue-d)}
+.kt .kit::after{content:"";position:absolute;left:0;right:0;bottom:0;height:70px;background:linear-gradient(#d9e4f3,#aebfda);border-top:4px solid #7d93c4}
+.kt .pill{position:absolute;left:236px;top:-36px;display:flex;gap:14px;align-items:center;font-size:16px;background:#fff;border:3px solid var(--blue-d);box-shadow:inset 0 0 0 2px var(--blue-l);padding:0 10px;z-index:30;white-space:nowrap}
+.kt .pill span{display:flex;align-items:center;gap:6px}
+.kt .pill.low{animation:blink .5s steps(2) infinite}
+.kt .chef{position:absolute;left:4px;top:222px;width:106px;height:106px;z-index:3;pointer-events:none}
+.kt .chef .hat{position:absolute;left:28px;top:-4px;z-index:3;animation:bob 2.4s ease-in-out infinite}
+.kt .chef .cin{position:absolute;inset:0;animation:bob 2.4s ease-in-out infinite}
+.kt .chef.work .cin,.kt .chef.work .hat{animation:hop .36s ease-in-out infinite}
+
+.kt .oven{position:absolute;left:114px;top:148px;width:232px;height:122px;padding:10px 10px 8px;background:linear-gradient(#e7eef9,#b3c3de);border:4px solid #5d78a8;box-shadow:inset 0 0 0 3px #f6faff,0 6px 0 #3f5c8c;z-index:4}
+.kt .oven .lbl{position:absolute;left:50%;top:-18px;transform:translateX(-50%);font-size:13px;background:var(--pink);color:#fff;padding:0 8px;border:2px solid var(--pink-d);text-shadow:1px 1px 0 var(--pink-d);white-space:nowrap}
+.kt .oven .slots{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;width:100%;height:100%}
+.kt .oven .knob{position:absolute;right:-1px;top:44px;width:0;height:0}
+.kt .sl{position:relative;background:#27304d;border:3px solid #7d93c4;display:grid;place-items:center;transition:background .3s,box-shadow .3s;cursor:grab}
+.kt .sl.empty{cursor:default}
+.kt .sl.locked{background:repeating-linear-gradient(45deg,#4a5578 0 6px,#3d4767 6px 12px);cursor:default}
+.kt .sl.baking{background:#7a3b2a;box-shadow:inset 0 0 20px #ffb347}
+.kt .sl.done{background:#9d5a2c;box-shadow:inset 0 0 16px #ffe08a;animation:pulse .6s ease-in-out infinite alternate}
+.kt .sl.burnt{background:#3a2a2a;animation:fadeOut 3s linear forwards}
+.kt .sl.hot{outline:3px dashed #ffd75e;outline-offset:1px}
+@keyframes fadeOut{0%,60%{opacity:1}100%{opacity:.05}}
+.kt .sl .pb{position:absolute;left:4px;right:4px;bottom:3px;height:6px;background:rgba(0,0,0,.45)}
+.kt .sl .pb i{display:block;height:100%;background:#ffd75e}
+.kt .sl img.it{margin-bottom:6px;pointer-events:none}
+.kt .sl .st{position:absolute;right:3px;top:0;font-size:12px;color:#ffe08a}
+.kt .puff{position:absolute;z-index:6;pointer-events:none;animation:puffUp 1.6s ease-out forwards}
+@keyframes puffUp{0%{opacity:.9;transform:translateY(0) scale(.7)}100%{opacity:0;transform:translateY(-34px) scale(1.4)}}
+
+.kt .pl{position:absolute;top:278px;width:116px;height:64px;z-index:4}
+.kt .pl .dish{position:absolute;left:4px;right:4px;bottom:4px;height:26px;border-radius:50%;background:#fff;border:4px solid var(--blue-d);box-shadow:inset 0 0 0 3px var(--pink),0 4px 0 rgba(63,92,140,.4)}
+.kt .pl img.it{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);cursor:grab;pointer-events:auto}
+.kt .pl.sel .dish{border-color:var(--pink-d);box-shadow:inset 0 0 0 3px #fff,0 0 0 3px #ffd75e}
+.kt .pl.hot .dish{border-color:#ffb347;box-shadow:inset 0 0 0 3px #ffe9a8,0 0 0 3px #ffd75e}
+.kt .pl.locked .dish{background:#c6d3e8;border-style:dashed;border-color:#8aa0c8;box-shadow:none}
+.kt .pl.locked .lk{position:absolute;left:50%;top:6px;transform:translateX(-50%)}
+.kt .pl .num{position:absolute;left:0;top:0;font-size:12px;background:#fff;border:2px solid var(--blue-d);padding:0 5px}
+
+.kt .bin{position:absolute;top:150px;width:84px;height:112px;z-index:4;cursor:grab;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:6px;
+  background:linear-gradient(#f3d9a4,#d0a463);border:4px solid #8a5a38;box-shadow:inset 0 0 0 3px #f9e8c4,0 5px 0 #6b4326;font-size:13px;line-height:14px;text-align:center;color:#5a3a22}
+.kt .bin:hover{filter:brightness(1.07);transform:translateY(-2px)}
+.kt .bin.dough{background:linear-gradient(#e3efff,#a8c4ea);border-color:#4f74ad;box-shadow:inset 0 0 0 3px #f1f7ff,0 5px 0 #34578a;color:#2e4a78}
+.kt .bin .ic{position:absolute;top:14px;left:0;right:0;display:flex;justify-content:center;pointer-events:none}
+.kt .bin .ic img{pointer-events:none}
+.kt .bin b{pointer-events:none;font-weight:400}
+
+.kt .trash{position:absolute;left:706px;top:270px;width:84px;height:72px;z-index:5;display:flex;justify-content:center;align-items:flex-end;cursor:pointer}
+.kt .trash .lid{position:absolute;top:2px;left:5px;transform-origin:0 100%;transition:transform .2s}
+.kt .trash .bd{position:absolute;bottom:0;left:5px}
+.kt .trash.hot .lid{transform:rotate(-28deg) translateY(-4px)}
+.kt .trash.hot{filter:drop-shadow(0 0 6px #ffd75e)}
+.kt .trash .lbl{position:absolute;left:50%;top:-14px;transform:translateX(-50%);font-size:12px;background:#fff;border:2px solid var(--blue-d);padding:0 6px;white-space:nowrap}
+.kt .mejoras{position:absolute;left:560px;top:284px;width:136px;height:50px;z-index:5;font-size:17px;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px}
+.kt .mejoras::before{content:""}
+.kt .mejoras .dot{position:absolute;right:-6px;top:-8px;width:18px;height:18px;background:#ff6fa0;border:2px solid #fff;color:#fff;font-size:12px;line-height:14px;text-align:center;animation:blink .8s steps(2) infinite}
+
+.kt .cu{position:absolute;top:14px;width:240px;height:116px;z-index:3;cursor:pointer;transition:transform .35s,opacity .35s}
+.kt .cu.in{animation:custIn .4s ease-out}
+.kt .cu.leave{opacity:0;transform:translateY(-14px) scale(.9)}
+.kt .cu.no{animation:shake .3s}
+.kt .cu.hot .an{filter:drop-shadow(0 0 5px #ffd75e) brightness(1.08);transform:translateY(-4px)}
+.kt .cu.hot .bub{border-color:#ffb347}
+.kt .cu .bub{position:absolute;left:56px;top:0;width:182px;height:58px;background:#fff;border:3px solid var(--blue-d);box-shadow:inset 0 0 0 2px var(--pink);display:flex;align-items:center;gap:6px;padding:0 6px;font-size:13px;line-height:15px;color:var(--ink)}
+.kt .cu .bub b{font-size:14px;display:block;font-weight:600}
+.kt .cu .bub::before{content:"";position:absolute;left:-12px;top:30px;border:8px solid transparent;border-right:10px solid var(--blue-d);border-left:0}
+.kt .cu .an{position:absolute;left:0;top:34px;transition:transform .15s}
+.kt .cu.happy .an{animation:hop .36s 3}
+.kt .cu .pat{position:absolute;left:58px;top:66px;width:150px;height:12px;background:#fff;border:3px solid var(--blue-d)}
+.kt .cu .pat i{display:block;height:100%;transition:width .1s linear}
+
+.kghost{position:absolute;z-index:85;pointer-events:none;filter:drop-shadow(0 6px 3px rgba(40,70,130,.35));transform:translate(-50%,-50%) scale(1.15)}
+.kshop{position:absolute;left:90px;top:0;width:620px;height:318px;z-index:50;padding:12px 20px 10px;background:var(--paper);animation:kIn .25s ease-out both}
+@keyframes kIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+.kshop h3{font-size:25px;color:var(--pink-d);font-weight:600;text-align:center;position:relative;z-index:2}
+.kshop .bank{position:absolute;right:26px;top:14px;z-index:3;display:flex;align-items:center;gap:6px;font-size:18px;background:#fff;border:3px solid var(--blue-d);padding:0 8px}
+.kshop .rows{position:relative;z-index:2;display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.kshop .row{display:flex;align-items:center;gap:10px;background:#fff;border:3px solid var(--blue-l);padding:2px 8px;height:40px}
+.kshop .row .nm{width:235px;font-size:16px;line-height:16px;font-weight:600}
+.kshop .row .nm small{display:block;font-size:12px;font-weight:400;color:var(--blue-d)}
+.kshop .row .pips{display:flex;gap:4px;width:60px}
+.kshop .row .pips i{width:14px;height:14px;background:#dbe6f5;border:2px solid var(--blue-d)}
+.kshop .row .pips i.on{background:#ff9fc2}
+.kshop .row .cur{width:110px;font-size:14px;line-height:15px}
+.kshop .row .btn{margin-left:auto;min-height:0;padding:3px 10px;font-size:15px;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.kshop .row .btn::before{content:""}
+.kshop .row .btn[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+.kshop .row .max{margin-left:auto;font-size:15px;color:var(--pink-d);font-weight:600}
+.kshop .foot{position:absolute;left:0;right:0;bottom:10px;display:flex;justify-content:center;z-index:3}
+`}));
+
 function bakeryGame() {
   go('bakery', () => {
-    const DAY = 90, BAKE = 4, BURN = 6, SLOTX = [150, 365, 580];
-    const root = div('bk'); play.append(root);
-    const pill = div('tpill'); root.append(pill);
+    const rid = runId, SV = kSave(), DAY = 90, SPOTX = [14, 280, 546];
+    const gS = () => kVal(SV, 'slots'), gP = () => kVal(SV, 'plates'), BAKE = () => kVal(SV, 'speed'), BURN = () => kVal(SV, 'gloves'), PAT = () => kVal(SV, 'patience');
+    const alive = () => rid === runId;
+    const root = div('kt'); play.append(root);
+    root.append(div('shop'), div('bar'), div('kit'));
+    const pill = div('pill'); root.append(pill);
+    const say2 = (t, f) => quip(t, f);
+
+    // ---- estado
+    let time = DAY, earned = 0, served = 0, lost = 0, running = false, paused = false, over = false, nextSpawn = 1.2, timerId = 0, sel = -1, shopEl = null;
+    const ovens = [0, 1, 2, 3].map(() => ({ s: 'empty' })), plates = [null, null, null], custs = [null, null, null];
+
+    // ---- chef
     const chef = div('chef'); chef.innerHTML = '<div class="cin"><img class="closed" alt=""><img class="open" alt=""></div>';
     const hat = hatImg(4); hat.className = 'hat'; chef.append(hat); root.append(chef); applyImages();
-    const oven = div('oven', '<div class="lbl">Horno</div>'); root.append(oven);
-    const plateEl = div('plate', '<div class="dish"></div><div class="lbl">Plato</div>'); root.append(plateEl);
-    const grid = div('bgrid'); root.append(grid);
+    const work = () => { chef.classList.add('work'); setTimeout(() => chef.classList.remove('work'), 450); };
 
-    let time = DAY, coins = 0, served = 0, lost = 0, running = false, over = false, nextSpawn = 1, plate = null, timerId = 0;
-    const custs = [null, null, null], ovens = [{ s: 'empty' }, { s: 'empty' }], slotEls = [];
-
-    // horno
-    ovens.forEach((o, i) => { const s = div('slot'); s.onclick = () => takeOven(i); oven.append(s); slotEls.push(s); });
+    // ---- horno
+    const oven = div('oven', '<div class="lbl">Horno profesional</div><div class="slots"></div>'); root.append(oven);
+    const slotsEl = oven.querySelector('.slots'), slotEls = [];
+    for (let i = 0; i < 4; i++) {
+      const el = div('sl'); el.dataset.i = i; slotsEl.append(el); slotEls.push(el);
+      el.addEventListener('pointerdown', e => beginDrag(e, () => srcOven(i)));
+    }
     function renderSlot(i) {
-      const o = ovens[i], el = slotEls[i]; el.className = 'slot ' + (o.s === 'empty' ? '' : o.s); el.innerHTML = '';
+      const o = ovens[i], el = slotEls[i], locked = i >= gS();
+      el.className = 'sl ' + (locked ? 'locked' : o.s); el.innerHTML = ''; el.dataset.drop = locked ? '' : 'oven';
+      if (locked) { el.append(kSpr.lock()); return; }
       if (o.s === 'empty') return;
-      el.append(itemImg(o.base, [], 5, o.s === 'baking' ? 'raw' : o.s === 'done' ? 'done' : 'burnt'));
-      const bar = div('bar'); bar.innerHTML = '<i></i>'; el.append(bar);
+      el.append(itemImg(o.base, [], 3, o.s === 'baking' ? 'raw' : o.s === 'done' ? 'done' : 'burnt', 'it'));
+      if (o.s !== 'burnt') el.append(div('pb', '<i></i>'));
     }
-    function renderPlate() {
-      plateEl.querySelectorAll('img').forEach(n => n.remove());
-      if (plate) plateEl.append(itemImg(plate.base, plate.tops, 5, 'done'));
-    }
-    function say2(t, force) { quip(t, force); }
-    function takeOven(i) {
-      if (!running) return; const o = ovens[i];
-      if (o.s === 'done') {
-        if (plate) { sfx.bad(); say2('El plato ya está ocupado. ¡Entrega o tíralo primero!'); return; }
-        plate = { base: o.base, tops: [] }; ovens[i] = { s: 'empty' }; sfx.pop(); renderSlot(i); renderPlate();
-      } else if (o.s === 'burnt') { ovens[i] = { s: 'empty' }; renderSlot(i); sfx.bad(); say2(pick(['¡Uy! Ese se quemó. A limpiar el horno.', 'Ay, se pasó de horneado…'])); }
-    }
-    function addDough(base) {
-      if (!running) return; const i = ovens.findIndex(o => o.s === 'empty');
-      if (i < 0) { sfx.bad(); say2('¡El horno está lleno! Saca algo primero.'); return; }
-      ovens[i] = { s: 'baking', base, t: 0 }; sfx.flip(); renderSlot(i);
-    }
-    function addTop(t) {
-      if (!running) return;
-      if (!plate) { sfx.bad(); say2('Primero saca algo del horno y ponlo en el plato.'); return; }
-      if (plate.tops.includes(t)) { sfx.bad(); return; }
-      plate.tops.push(t); sfx.pop(); renderPlate();
-    }
-    function trash() { if (!plate) return; plate = null; sfx.bad(); renderPlate(); }
+    const renderOven = () => slotEls.forEach((_, i) => renderSlot(i));
+    function puffAt(x, y) { const p = kSpr.puff(); p.className = 'puff'; p.style.left = x + 'px'; p.style.top = y + 'px'; root.append(p); setTimeout(() => p.remove(), 1700); }
+    const slotPos = i => [114 + 14 + (i % 2) * 106 + 40, 148 + 14 + Math.floor(i / 2) * 52];
 
-    // botones
-    [['Masa rollito', () => itemImg('roll', [], 3, 'raw'), () => addDough('roll')],
-    ['Masa cupcake', () => itemImg('cup', [], 3, 'raw'), () => addDough('cup')],
-    ['Tirar plato', () => spimg('burnt', 3), trash],
-    ['Glaseado', () => topIcon('g', 4), () => addTop('g')],
-    ['Chispas', () => topIcon('s', 4), () => addTop('s')],
-    ['Cereza', () => topIcon('c', 4), () => addTop('c')]].forEach(([t, ic, f]) => {
-      const b = document.createElement('button'); b.className = 'bb'; b.append(ic(), document.createTextNode(t)); b.onclick = f; grid.append(b);
+    // ---- platos
+    const plEls = [];
+    for (let i = 0; i < 3; i++) {
+      const el = div('pl'); el.style.left = (114 + i * 124) + 'px'; el.dataset.i = i; root.append(el); plEls.push(el);
+      el.addEventListener('pointerdown', e => beginDrag(e, () => srcPlate(i)));
+    }
+    function renderPlates() {
+      plEls.forEach((el, i) => {
+        const locked = i >= gP(), p = plates[i];
+        el.className = 'pl' + (locked ? ' locked' : '') + (sel === i && p ? ' sel' : ''); el.dataset.drop = locked ? '' : 'plate';
+        el.innerHTML = '<div class="dish"></div>';
+        if (locked) { const l = kSpr.lock(); l.className = 'lk'; el.append(l); return; }
+        if (gP() > 1) el.append(div('num', '' + (i + 1)));
+        if (p) el.append(itemImg(p.base, p.tops, 4, 'done', 'it'));
+      });
+    }
+
+    // ---- ingredientes
+    [['dough', 'roll', 'Masa de rollito'], ['dough', 'cup', 'Masa de cupcake'], ['top', 'g', 'Glaseado'], ['top', 's', 'Chispas'], ['top', 'c', 'Cereza']].forEach(([k, v, name], i) => {
+      const b = div('bin ' + (k === 'dough' ? 'dough' : '')); b.style.left = (362 + i * 86) + 'px'; b.style.width = '80px';
+      const ic = div('ic'); ic.append(k === 'dough' ? itemImg(v, [], 4, 'raw') : topIcon(v, 6)); b.append(ic, div('', '<b>' + name + '</b>'));
+      b.addEventListener('pointerdown', e => beginDrag(e, () => k === 'dough' ? srcDough(v) : srcTop(v)));
+      root.append(b);
     });
 
-    // clientes
+    // ---- basura y mejoras
+    const trashEl = div('trash'); trashEl.dataset.drop = 'trash';
+    const tb = kSpr.trash(); tb.className = 'bd'; const tl = kSpr.lid(); tl.className = 'lid';
+    trashEl.append(tb, tl, div('lbl', 'Basura')); root.append(trashEl);
+    trashEl.addEventListener('click', () => {
+      if (!running || paused) return;
+      if (sel >= 0 && plates[sel]) { plates[sel] = null; sel = -1; sfx.bad(); renderPlates(); say2('¡Tirado! Arrastra cualquier cosa al basurero.'); }
+      else say2('Arrastra aquí lo que quieras tirar.');
+    });
+    const mej = btn('Mejoras', () => openShop(), 'big mejoras plain'); root.append(mej);
+
+    // ---- arrastrar y soltar (mouse y táctil)
+    function beginDrag(e, getSrc) {
+      if (!running || paused || over || (e.button || 0) > 0) return;
+      const src = getSrc(); if (!src) return;
+      e.preventDefault();
+      const sx = e.clientX, sy = e.clientY; let ghost = null, hot = null;
+      const zoneAt = (cx, cy) => { for (const n of document.elementsFromPoint(cx, cy)) { const z = n.closest && n.closest('[data-drop]'); if (z && z.dataset.drop && root.contains(z)) return z; } return null; };
+      const okZone = z => z && src.accepts(z.dataset.drop, +z.dataset.i);
+      const mv = ev => {
+        if (!ghost && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 7) { ghost = div('kghost'); ghost.append(src.ghost()); stage.append(ghost); sfx.flip(); }
+        if (!ghost) return;
+        const r = stage.getBoundingClientRect();
+        ghost.style.left = ((ev.clientX - r.left) * 800 / r.width) + 'px'; ghost.style.top = ((ev.clientY - r.top) * 500 / r.height) + 'px';
+        const z = zoneAt(ev.clientX, ev.clientY), nh = okZone(z) ? z : null;
+        if (nh !== hot) { if (hot) hot.classList.remove('hot'); hot = nh; if (hot) hot.classList.add('hot'); }
+      };
+      const up = ev => {
+        removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up);
+        if (hot) hot.classList.remove('hot');
+        if (ghost) {
+          ghost.remove(); const z = zoneAt(ev.clientX, ev.clientY);
+          if (ev.type !== 'pointercancel' && alive() && okZone(z)) src.drop(z.dataset.drop, +z.dataset.i);
+        } else if (ev.type === 'pointerup' && alive()) src.click();
+      };
+      addEventListener('pointermove', mv); addEventListener('pointerup', up); addEventListener('pointercancel', up);
+    }
+    cleanup = () => { running = false; clearInterval(timerId); document.querySelectorAll('.kghost').forEach(n => n.remove()); };
+
+    // ---- orígenes de arrastre
+    const srcDough = base => ({
+      ghost: () => itemImg(base, [], 4, 'raw'), accepts: z => z === 'oven',
+      drop: (z, i) => addDough(base, i), click: () => addDough(base)
+    });
+    const srcTop = t => ({
+      ghost: () => topIcon(t, 6), accepts: (z, i) => z === 'plate' && plates[i] && !plates[i].tops.includes(t),
+      drop: (z, i) => addTop(i, t),
+      click: () => {
+        const i = (sel >= 0 && plates[sel] && !plates[sel].tops.includes(t)) ? sel : plates.findIndex((p, k) => k < gP() && p && !p.tops.includes(t));
+        if (i < 0) { sfx.bad(); say2(plates.some(p => p) ? 'Ese plato ya lo tiene. ¡Prueba con otro adorno!' : 'Primero saca algo del horno y ponlo en un plato.'); return; }
+        addTop(i, t);
+      }
+    });
+    const srcOven = si => {
+      const o = ovens[si]; if (si >= gS() || (o.s !== 'done' && o.s !== 'burnt')) return null;
+      return {
+        ghost: () => itemImg(o.base, [], 4, o.s),
+        accepts: (z, i) => z === 'trash' || (o.s === 'done' && ((z === 'plate' && !plates[i]) || (z === 'cu' && custs[i]))),
+        drop: (z, i) => { if (z === 'trash') discardOven(si); else if (z === 'plate') toPlate(si, i); else serve(i, { k: 'oven', i: si }); },
+        click: () => { if (o.s === 'burnt') discardOven(si); else { const pi = plates.findIndex((p, k) => k < gP() && !p); if (pi < 0) { sfx.bad(); say2('Todos los platos están ocupados. ¡Entrega o tira alguno!'); } else toPlate(si, pi); } }
+      };
+    };
+    const srcPlate = pi => {
+      const p = plates[pi]; if (!p) return null;
+      return {
+        ghost: () => itemImg(p.base, p.tops, 4, 'done'),
+        accepts: (z, i) => z === 'trash' || (z === 'cu' && custs[i]),
+        drop: (z, i) => { if (z === 'trash') { plates[pi] = null; if (sel === pi) sel = -1; sfx.bad(); renderPlates(); } else serve(i, { k: 'plate', i: pi }); },
+        click: () => { sel = sel === pi ? -1 : pi; sfx.flip(); renderPlates(); }
+      };
+    };
+
+    // ---- acciones
+    function addDough(base, at) {
+      if (!running || paused) return;
+      let i = (at != null && at < gS() && ovens[at].s === 'empty') ? at : ovens.findIndex((o, k) => k < gS() && o.s === 'empty');
+      if (i < 0) { sfx.bad(); say2('¡El horno está lleno! Saca algo o mejora el horno.'); return; }
+      ovens[i] = { s: 'baking', base, t: 0 }; sfx.flip(); renderSlot(i); work();
+    }
+    function addTop(pi, t) {
+      if (!running || paused) return; const p = plates[pi]; if (!p || p.tops.includes(t)) { sfx.bad(); return; }
+      p.tops.push(t); sfx.pop(); renderPlates(); work();
+    }
+    function toPlate(si, pi) {
+      const o = ovens[si]; if (o.s !== 'done' || plates[pi]) return;
+      plates[pi] = { base: o.base, tops: [] }; ovens[si] = { s: 'empty' }; if (sel < 0) sel = pi; sfx.pop(); renderSlot(si); renderPlates();
+    }
+    function discardOven(si) { ovens[si] = { s: 'empty' }; sfx.bad(); renderSlot(si); }
+
+    // ---- clientes
     function newOrder() {
       const base = Math.random() < .5 ? 'roll' : 'cup';
       const n = served < 2 ? Math.floor(Math.random() * 2) : served < 6 ? Math.floor(Math.random() * 3) : 1 + Math.floor(Math.random() * 3);
@@ -1265,65 +1498,130 @@ function bakeryGame() {
     const orderTxt = o => '<b>' + BASEN[o.base] + '</b>' + (o.tops.length ? 'con ' + o.tops.map(t => TOPN[t]).join(', ') : 'sencillo');
     function spawn() {
       const i = custs.findIndex(c => !c); if (i < 0) return;
-      const o = newOrder(), kind = pick(['bear', 'cat', 'bunny', 'chick', 'panda']), max = 24 + o.tops.length * 7;
-      const el = div('cust in'); el.style.left = SLOTX[i] + 'px';
+      const o = newOrder(), kind = pick(['bear', 'cat', 'bunny', 'chick', 'panda']), max = (26 + o.tops.length * 8) * PAT();
+      const el = div('cu in'); el.style.left = SPOTX[i] + 'px'; el.dataset.drop = 'cu'; el.dataset.i = i;
       const bub = div('bub'); bub.append(itemImg(o.base, o.tops, 3), div('', orderTxt(o)));
       const an = div('an'); an.append(animalImg(kind, 3));
       const pat = div('pat', '<i></i>'); el.append(bub, an, pat);
-      el.onclick = () => serve(i); root.append(el);
+      el.addEventListener('click', () => tapCust(i)); root.append(el);
       custs[i] = { el, o, p: max, max, bar: pat.firstChild }; sfx.blip();
     }
-    function remove(i, cls) { const c = custs[i]; if (!c) return; custs[i] = null; c.el.classList.add(cls || 'leave'); setTimeout(() => c.el.remove(), 450); }
-    function serve(i) {
-      const c = custs[i]; if (!running || !c) return;
-      if (!plate) { sfx.bad(); say2('Primero prepara el pedido en el plato.'); return; }
-      const ok = plate.base === c.o.base && plate.tops.length === c.o.tops.length && c.o.tops.every(t => plate.tops.includes(t));
-      if (!ok) { c.el.classList.remove('no'); void c.el.offsetWidth; c.el.classList.add('no'); sfx.bad(); say2(pick(['Mmm, ese no es el pedido. ¡Revisa la burbuja!', 'Casi… pero no es lo que pidió.'])); return; }
-      const price = 5 + c.o.tops.length * 3 + (c.p > c.max * .5 ? 2 : 0);
-      coins += price; served++; plate = null; renderPlate(); sfx.ok();
+    function dropCust(i, cls) { const c = custs[i]; if (!c) return; custs[i] = null; c.el.classList.add(cls || 'leave'); setTimeout(() => c.el.remove(), 450); }
+    const matches = (c, it) => it && it.base === c.o.base && (it.tops || []).length === c.o.tops.length && c.o.tops.every(t => (it.tops || []).includes(t));
+    function tapCust(ci) {
+      if (!running || paused) return; const c = custs[ci]; if (!c) return;
+      let pi = plates.findIndex((p, k) => k < gP() && matches(c, p));
+      if (pi < 0) { const oi = ovens.findIndex((o, k) => k < gS() && o.s === 'done' && matches(c, { base: o.base, tops: [] })); if (oi >= 0) { serve(ci, { k: 'oven', i: oi }); return; } }
+      if (pi < 0) pi = (sel >= 0 && plates[sel]) ? sel : plates.findIndex((p, k) => k < gP() && p);
+      if (pi < 0) { sfx.bad(); say2('Prepara el pedido en un plato y luego tócame al cliente o arrástralo hacia él.'); return; }
+      serve(ci, { k: 'plate', i: pi });
+    }
+    function serve(ci, from) {
+      const c = custs[ci]; if (!running || paused || !c) return;
+      const it = from.k === 'plate' ? plates[from.i] : ovens[from.i]; if (!it) return;
+      if (!matches(c, it)) {
+        c.el.classList.remove('no'); void c.el.offsetWidth; c.el.classList.add('no'); sfx.bad();
+        say2(pick(['Mmm, ese no es el pedido. ¡Revisa la burbuja!', 'Casi… pero no es lo que pidió.', 'Ese no lleva lo mismo, ¡mira bien!'])); return;
+      }
+      const nt = (it.tops || []).length, price = 5 + nt * 3 + (c.p > c.max * .5 ? 2 : 0);
+      if (from.k === 'plate') { plates[from.i] = null; if (sel === from.i) sel = -1; renderPlates(); } else { ovens[from.i] = { s: 'empty' }; renderSlot(from.i); }
+      earned += price; served++; SV.bank += price; kPut(SV); refreshPill(); sfx.ok(); work();
       c.el.classList.add('happy'); c.el.style.pointerEvents = 'none';
-      const f = div('coinfx', '+' + price); f.style.left = (SLOTX[i] + 70 + 0) + 'px'; f.style.top = (44 + 50) + 'px'; stage.append(f); setTimeout(() => f.remove(), 1200);
-      burst(SLOTX[i] + 40, 44 + 90, 4);
-      custs[i] = null; setTimeout(() => { c.el.classList.add('leave'); setTimeout(() => c.el.remove(), 450); }, 1000);
+      const f = div('coinfx', '+' + price); f.style.left = (SPOTX[ci] + 80) + 'px'; f.style.top = '100px'; stage.append(f); setTimeout(() => f.remove(), 1200);
+      burst(SPOTX[ci] + 60, 44 + 70, 4);
+      custs[ci] = null; setTimeout(() => { c.el.classList.add('leave'); setTimeout(() => c.el.remove(), 450); }, 1000);
       say2(pick(['¡Qué rico quedó! El cliente está feliz.', '¡Excelente servicio, {n}!', '¡Otro cliente contento!', '¡Así se hace! ¡Huele delicioso!']), true);
     }
 
+    // ---- reloj y marcador
+    function refreshPill() {
+      pill.classList.toggle('low', running && time <= 10);
+      pill.innerHTML = '<span>Tiempo: ' + Math.max(0, Math.ceil(time)) + '</span><span></span>';
+      pill.lastChild.append(sprImg('coin', 2), document.createTextNode(SV.bank + ' (+' + earned + ')'));
+      mej.querySelectorAll('.dot').forEach(n => n.remove());
+      if (KUP_ORDER.some(canBuy)) mej.append(div('dot', '!'));
+    }
     function tick() {
-      if (!running) return; const dt = .1;
+      if (!running || paused) return; const dt = .1;
       time -= dt; nextSpawn -= dt;
-      if (nextSpawn <= 0 && time > 6) { spawn(); nextSpawn = Math.max(4.5, 8 - served * .3) + Math.random() * 2.5; }
+      if (nextSpawn <= 0 && time > 7) { spawn(); nextSpawn = Math.max(4.5, 8 - served * .3) + Math.random() * 2.5; }
       custs.forEach((c, i) => {
         if (!c) return; c.p -= dt; const r = clamp(c.p / c.max, 0, 1);
         c.bar.style.width = (r * 100) + '%'; c.bar.style.background = r > .5 ? '#7fd6a4' : r > .25 ? '#ffd75e' : '#ff7a8a';
-        if (c.p <= 0) { lost++; remove(i); sfx.bad(); say2(pick(['¡Oh no, se fue sin su pedido!', 'Se cansó de esperar… ¡más rápido, {n}!'])); }
+        if (c.p <= 0) { lost++; dropCust(i); sfx.bad(); say2(pick(['¡Oh no, se fue sin su pedido!', 'Se cansó de esperar… ¡más rápido, {n}!'])); }
       });
       ovens.forEach((o, i) => {
-        if (o.s === 'baking') { o.t += dt; slotEls[i].querySelector('.bar i').style.width = (o.t / BAKE * 100) + '%'; if (o.t >= BAKE) { o.s = 'done'; o.t = 0; renderSlot(i); sfx.ok(); say2('¡Ya salió uno! Huele a canela.'); } }
-        else if (o.s === 'done') { o.t += dt; slotEls[i].querySelector('.bar i').style.width = (100 - o.t / BURN * 100) + '%'; if (o.t >= BURN) { o.s = 'burnt'; renderSlot(i); sfx.bad(); say2('¡Uy! Se quemó uno…'); } }
+        if (i >= gS()) return; const bar = slotEls[i].querySelector('.pb i');
+        if (o.s === 'baking') {
+          o.t += dt; if (bar) bar.style.width = Math.min(100, o.t / BAKE() * 100) + '%';
+          if (o.t >= BAKE()) { o.s = 'done'; o.t = 0; renderSlot(i); const [x, y] = slotPos(i); puffAt(x, y); sfx.ok(); say2('¡Ya salió uno! Huele a canela.'); }
+        } else if (o.s === 'done') {
+          o.t += dt; if (bar) { bar.style.width = (100 - o.t / BURN() * 100) + '%'; bar.style.background = o.t > BURN() * .6 ? '#ff7a8a' : '#7fd6a4'; }
+          if (o.t >= BURN()) { o.s = 'burnt'; o.t = 0; renderSlot(i); sfx.bad(); say2('¡Uy! Se quemó uno… tranquila, se limpia solito.'); }
+        } else if (o.s === 'burnt') {
+          o.t += dt; if (o.t >= 3) { const [x, y] = slotPos(i); ovens[i] = { s: 'empty' }; renderSlot(i); puffAt(x, y); }
+        }
       });
-      pill.innerHTML = '<span>Tiempo: ' + Math.max(0, Math.ceil(time)) + '</span><span></span>';
-      const sp = pill.lastChild; sp.append(sprImg('coin', 2), document.createTextNode(coins));
+      refreshPill();
       if (time <= 0) end();
     }
-    function end() {
-      running = false; over = true; clearInterval(timerId);
-      custs.forEach((c, i) => remove(i));
-      const nb = coins > state.best.bakery; if (nb) { state.best.bakery = coins; store.set('best', state.best); }
-      if (coins >= 40) love(coins >= 100 ? 2 : 1); sfx.win();
-      endCard('¡Se acabó el día!', 'Ganaste ' + coins + ' monedas · ' + served + ' clientes felices' + (nb ? ' · ¡nuevo récord!' : ''), [['Otro día', bakeryGame], ['Juegos', miniMenu], ['Hablar', talkScene]]);
-      say(coins >= 100 ? '¡Wow, {n}! ¡Somos las mejores pasteleras del cielo!' : coins >= 40 ? '¡Muy bien! La pastelería quedó llenita de clientes felices.' : '¡Buen primer día! Mañana lo hacemos todavía mejor.', { wait: false });
-    }
-    cleanup = () => { running = false; clearInterval(timerId); };
 
-    renderPlate(); pill.innerHTML = '<span>Tiempo: ' + DAY + '</span><span></span>';
-    const rid = runId;
+    // ---- mejoras
+    function canBuy(k) { const l = kLvl(SV, k); return l < KUP[k].val.length - 1 && SV.bank >= KUP[k].cost[l]; }
+    function openShop() {
+      if (shopEl) return; paused = true;
+      shopEl = div('kshop pbox'); play.append(shopEl); drawShop();
+    }
+    function closeShop() { if (shopEl) shopEl.remove(); shopEl = null; paused = false; refreshPill(); }
+    function drawShop() {
+      shopEl.innerHTML = '<h3>Mejoras de la cocina</h3>';
+      const bank = div('bank'); bank.append(sprImg('coin', 2), document.createTextNode(SV.bank)); shopEl.append(bank);
+      const rows = div('rows');
+      KUP_ORDER.forEach(k => {
+        const U = KUP[k], l = kLvl(SV, k), max = U.val.length - 1, r = div('row');
+        r.append(div('nm', U.name + '<small>' + U.desc + '</small>'));
+        const pips = div('pips'); for (let i = 0; i < max; i++) { const pi = document.createElement('i'); if (i < l) pi.className = 'on'; pips.append(pi); }
+        r.append(pips);
+        r.append(div('cur', U.fmt(U.val[l]) + (l < max ? '<br>→ ' + U.fmt(U.val[l + 1]) : '')));
+        if (l >= max) r.append(div('max', '¡Al máximo!'));
+        else {
+          const b = btn('', () => buy(k), 'plain'); b.append(sprImg('coin', 2), document.createTextNode(U.cost[l]));
+          if (SV.bank < U.cost[l]) b.disabled = true; r.append(b);
+        }
+        rows.append(r);
+      });
+      shopEl.append(rows);
+      const foot = div('foot'); foot.append(btn('Cerrar', closeShop, 'plain')); shopEl.append(foot);
+    }
+    function buy(k) {
+      if (!canBuy(k)) { sfx.bad(); return; }
+      const l = kLvl(SV, k); SV.bank -= KUP[k].cost[l]; SV.up[k] = l + 1; kPut(SV);
+      sfx.win(); renderOven(); renderPlates(); drawShop(); refreshPill(); burst(400, 200, 5);
+      say2(pick(['¡Qué mejora tan linda! Ahora trabajamos como profesionales.', '¡Genial, {n}! La cocina quedó espectacular.', '¡Más rápido y más bonito!']), true);
+    }
+
+    // ---- fin del día
+    function end() {
+      running = false; over = true; clearInterval(timerId); sel = -1;
+      custs.forEach((c, i) => dropCust(i)); SV.days++; kPut(SV);
+      const nb = earned > state.best.bakery; if (nb) { state.best.bakery = earned; store.set('best', state.best); }
+      if (earned >= 40) love(earned >= 100 ? 2 : 1); sfx.win();
+      endCard('¡Se acabó el día!', 'Hoy ganaste ' + earned + ' monedas · ' + served + ' clientes felices' + (nb ? ' · ¡récord!' : '') + '<br>Ahorros: ' + SV.bank, [['Otro día', bakeryGame], ['Mejoras', openShop], ['Juegos', miniMenu]]);
+      say(earned >= 100 ? '¡Wow, {n}! ¡Somos las mejores pasteleras del cielo!' : earned >= 40 ? '¡Muy bien! Con estas monedas podemos mejorar la cocina.' : '¡Buen día! Mejora el horno con tus monedas y mañana va mejor.', { wait: false });
+    }
+
+    // ---- inicio
+    renderOven(); renderPlates(); refreshPill();
     (async () => {
-      await say('¡Bienvenida a nuestra pastelería, {n}! Yo me pongo el gorrito de chef y tú atiendes.');
-      if (rid !== runId) return;
-      await say('Pon masa en el horno y espera a que se dore. Sácala al plato, decórala como pide el cliente y haz clic en él para entregarla.');
-      if (rid !== runId) return;
-      await say('¡Cuidado, si te pasas de horneado se quema! ¿Lista? ¡Abrimos!', { wait: false });
-      if (rid !== runId) return;
+      if (!store.get('bk2tut', false)) {
+        await say('¡Bienvenida a nuestra pastelería, {n}! Yo me pongo el gorrito de chef y tú atiendes.'); if (!alive()) return;
+        await say('Arrastra la masa al horno (o tócala). Cuando salga doradita, llévala a un plato y ponle adornos como pide el cliente.'); if (!alive()) return;
+        await say('Para entregar, toca al cliente o arrastra el plato hacia él. Lo que no sirva, ¡al basurero! Y con las monedas compras mejoras.', { wait: false }); if (!alive()) return;
+        store.set('bk2tut', true); await sleep(1200);
+      } else {
+        await say(pick(['¡Día ' + (SV.days + 1) + ' en la pastelería! ¡Abrimos!', '¡Delantal puesto, horno encendido! ¡Abrimos!']), { wait: false }); await sleep(700);
+      }
+      if (!alive()) return;
       running = true; timerId = setInterval(tick, 100);
     })();
   });
@@ -1337,7 +1635,8 @@ document.head.appendChild(Object.assign(document.createElement('style'), {
 .cw{position:absolute;top:104px;width:112px;height:150px;cursor:pointer;transition:left var(--sw,.3s) ease-in-out}
 .cw .cupimg{position:absolute;left:0;top:0;z-index:2;transition:transform .35s}
 .cw.up .cupimg{transform:translateY(-72px)}
-.cw .roll{position:absolute;left:28px;bottom:24px;z-index:1}
+.cw .roll{position:absolute;left:28px;bottom:30px;z-index:1;visibility:hidden;opacity:0;transition:opacity .1s,visibility 0s}
+.cw.up .roll{visibility:visible;opacity:1;transition:opacity .15s .22s,visibility 0s .22s}
 .cw.wrong .cupimg{animation:shake .3s}
 .rps{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
 .rps .row{display:flex;align-items:center;gap:18px}
